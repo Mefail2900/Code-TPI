@@ -1,14 +1,29 @@
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <DHT.h>
+// Sensor pins
+#define sensorPower 7
+#define sensorPin A0
 
 void setup() {
-  // put your setup code here, to run once:
+  pinMode(sensorPower, OUTPUT);
 
+  // Initially keep the sensor OFF
+  digitalWrite(sensorPower, LOW);
+
+  Serial.begin(9600);
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  //get the reading from the function below and print it
+  Serial.print("Analog output: ");
+  Serial.println(readSensor());
 
+  delay(1000);
+}
+
+//  This function returns the analog soil moisture measurement
+int readSensor() {
+  digitalWrite(sensorPower, HIGH);  // Turn the sensor ON
+  delay(10);                        // Allow power to settle
+  int val = analogRead(sensorPin);  // Read the analog value form sensor
+  digitalWrite(sensorPower, LOW);   // Turn the sensor OFF
+  return val;                       // Return analog moisture value
 }
