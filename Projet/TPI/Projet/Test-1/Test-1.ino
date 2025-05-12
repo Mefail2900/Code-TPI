@@ -1,29 +1,69 @@
-// Sensor pins
-#define sensorPower 7
-#define sensorPin A0
+#include <WiFi.h>
+#include <WebServer.h>
+#include "html.h"
 
-void setup() {
-  pinMode(sensorPower, OUTPUT);
+/* ----------- Configuration ----------- */
+constexpr char SSID[]     = "NETGEAR69";
+constexpr char PASSWORD[] = "fancyflower620";
 
-  // Initially keep the sensor OFF
-  digitalWrite(sensorPower, LOW);
+constexpr uint8_t SensorPin = A0;          // GPIO pin connected to the capacitive soil‑moisture sensor
+constexpr uint16_t HttpPort = 80;
+constexpr uint32_t ReadInterval = 1000;  // sensor refresh interval (ms)
+/* ------------------------------------- */
 
-  Serial.begin(9600);
+WebServer server(HttpPort);
+
+int moisturePct = 0; // Latest moisture percentage (0‑100)
+
+/* --- Forward declarations --- */
+void handleRoot();
+void handleMoisture();
+/* ---------------------------- */
+
+void setup()
+{
+    Serial.begin(115200);
+    delay(100);
+
+    // Connect to Wi‑Fi
+    Serial.printf("Connecting to \"%s\"", SSID);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(SSID, PASSWORD);
+
+    uint32_t attempt = 0;
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(250);
+        Serial.print('.');
+        if (++attempt > 120) {            // 30 s timeout → restart
+            Serial.println("\nRestarting...");
+            ESP.restart();
+        }
+    }
+    Serial.printf("\nConnected, IP address: %s\n", WiFi.localIP().toString().c_str());
+
+    // Register HTTP endpoints
+    server.on("/", handleRoot);
+    server.on("/readMoisture", handleMoisture);
+    server.begin();
 }
 
-void loop() {
-  //get the reading from the function below and print it
-  Serial.print("Analog output: ");
-  Serial.println(readSensor());
 
-  delay(1000);
+void handleRoot()
+{
+    server.send_P(200, "text/html", IndexHtml);
 }
 
-//  This function returns the analog soil moisture measurement
-int readSensor() {
-  digitalWrite(sensorPower, HIGH);  // Turn the sensor ON
-  delay(10);                        // Allow power to settle
-  int val = analogRead(sensorPin);  // Read the analog value form sensor
-  digitalWrite(sensorPower, LOW);   // Turn the sensor OFF
-  return val;                       // Return analog moisture value
+void handleMoisture()
+{
+    server.send(200, "text/plain", String(moisturePct));
+}
+
+void loop()
+{
+    // Read sensor (12‑bit ADC on ESP32)
+    int raw = analogRead(SensorPin);
+    moisturePct = 100 - ((raw * 100) / 4095);
+
+    server.handleClient();
+    delay(ReadInterval);
 }
