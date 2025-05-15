@@ -1,6 +1,5 @@
 /*********
-  Rui Santos
-  Complete project details at https://randomnerdtutorials.com  
+  Mefail Sulejmani 
 *********/
 
 // Load Wi-Fi library
@@ -29,7 +28,7 @@ const int output26 = 26;
 
 
 
-const int timeWatering = 4000;// time for watering, 1000 = 1 second 
+const int timeWatering = 8000;// time for watering, 1000 = 1 second 
 
 // Current time
 unsigned long currentTime = millis();
@@ -119,8 +118,8 @@ void serverWeb()
             client.println("<!DOCTYPE html><html>");
             client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
             client.println("<link rel=\"icon\" href=\"data:,\">");
-            // turns the GPIOs on and off
-            
+
+            // turns the GPIO 26 on and off
             if (header.indexOf("GET /26/on") >= 0) {
               Serial.println("GPIO 26 on");
               output26State = "Arrosage";
@@ -169,13 +168,19 @@ void serverWeb()
                
             muistureSensor();
 
-            // ----------  Script JS minimal pour mises à jour sans rechargement ----------
+            // ----------  Script JS, code that refresh the values of the page without refreshing the page  
             client.println("<script>");
+
+            //this function sends a request to "/moisture" after it converts it and its update to the element with a new value of the humidity 
             client.println("function refresh(){fetch('/moisture').then(r=>r.text()).then(v=>document.getElementById('hum').textContent=v+'%');}");
+
+            //Automatically refresh the value of the humidity sensor every 1,2 second  without reloading the page
             client.println("setInterval(refresh,1200); refresh();");
+
+            //in this function when the button "Arrosage" is clicked he will send a request for activating the pump and after it will refresh the value of the humidity 
             client.println("function water(){fetch('/water').then(()=>refresh());}");
             client.println("</script>");
-            // ---------------------------------------------------------------------------
+            
             
             // The HTTP response ends with another blank line
             client.println();
@@ -196,6 +201,20 @@ void serverWeb()
 
   }
 }
+void automaticWatering(){
+
+  if (moisturePct < 20 && output26State == "off") {
+    Serial.println("Arrosage automatique déclenché !");
+    output26State = "Arrosage";
+    digitalWrite(output26, HIGH);
+    delay(timeWatering);
+    digitalWrite(output26, LOW);
+    output26State = "off";
+  }
+}
+
 void loop(){
  serverWeb();
+
+    automaticWatering();
 }

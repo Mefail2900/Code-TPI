@@ -29,7 +29,7 @@ const int output26 = 26;
 
 
 
-const int timeWatering = 6000;// time for watering, 1000 = 1 second 
+const int timeWatering = 8000;// time for watering, 1000 = 1 second 
 
 // Current time
 unsigned long currentTime = millis();
@@ -67,16 +67,16 @@ void muistureSensor(){
   int raw = analogRead(SensorPin);            //Sensor analog
   moisturePct = 100 - ((raw * 100) / 4095);   //calculator of the sensor
 }
-
-void loop(){
-  WiFiClient client = server.available();   // Listen for incoming clients
+void serverWeb()
+{
+   WiFiClient client = server.available();   // Listen for incoming clients
   muistureSensor();
   
   
   if (client) {                             // If a new client connects,
     currentTime = millis();
     previousTime = currentTime;
-    
+
     String currentLine = "";                // make a String to hold incoming data from the client
     while (client.connected() && currentTime - previousTime <= timeoutTime) {  // loop while the client's connected
       currentTime = millis();
@@ -84,7 +84,28 @@ void loop(){
         char c = client.read();             // read a byte, then
         Serial.write(c);                    // print it out the serial monitor
         header += c;
-        
+         // ----------  Nouvelles routes API légères  ----------
+        if (header.indexOf("GET /moisture") >= 0) {
+          muistureSensor();                           // fresh value 
+          client.println("HTTP/1.1 200 OK");
+          client.println("Content-type:text/plain");
+          client.println("Connection: close\n");
+          client.print(moisturePct);                  // % of the moisture sensor 
+          break;
+        }
+        if (header.indexOf("GET /water") >= 0) {
+          Serial.println("Arrosage déclenché via /water");
+          output26State = "Arrosage";
+          digitalWrite(output26, HIGH);
+          delay(timeWatering);
+          digitalWrite(output26, LOW);
+          output26State = "off";
+          client.println("HTTP/1.1 204 No Content"); // réponse vide
+          client.println("Connection: close\n");
+          break;
+        }
+        // -----------------------------------------------------
+
         if (c == '\n') {                    // if the byte is a newline character
           // if the current line is blank, you got two newline characters in a row.
           // that's the end of the client HTTP request, so send a response:
@@ -97,7 +118,6 @@ void loop(){
             client.println();
             client.println("<!DOCTYPE html><html>");
             client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-            client.println("<meta http-equiv=\"refresh\" content=\"4\">");
             client.println("<link rel=\"icon\" href=\"data:,\">");
             // turns the GPIOs on and off
             
@@ -135,19 +155,33 @@ void loop(){
             client.print(timeWatering / 1000, 1);   // 1 décimale, 60000 ms = 1 min
             client.println(" secondes</p>");
            
-            client.print("<p class=\"moistureText\">");
+            client.print("<p id=\"hum\" class=\"moistureText\">");
             client.print(moisturePct );
             client.print("%</p>");
 
 
             // If the output26State is off, it displays the ON button       
             if (output26State=="off") {
-              client.println("<p><a href=\"/26/on\"><button class=\"button\">Arroser</button></a></p>");
+              client.println("<p><button class=\"button\" onclick=\"water()\">Arroser</button></p>");
             } else {
-              client.println("<p><a href=\"/26/off\"><button class=\"button button2\">OFF</button></a></p>");
+              client.println("<p><button class=\"button button2\" disabled>OFF</button></p>");
             } 
                
             muistureSensor();
+
+            // ----------  Script JS, code that refresh the values of the page without refreshing the page  
+            client.println("<script>");
+            
+            //this function sends a request to "/moisture" after it converts it and its update to the element with a new value of the humidity 
+            client.println("function refresh(){fetch('/moisture').then(r=>r.text()).then(v=>document.getElementById('hum').textContent=v+'%');}");
+
+            //Automatically refresh the value of the humidity sensor every 1,2 second  without reloading the page
+            client.println("setInterval(refresh,1200); refresh();");
+
+            //in this function when the button "Arrosage" is clicked he will send a request for activating the pump and after it will refresh the value of the humidity 
+            client.println("function water(){fetch('/water').then(()=>refresh());}");
+            client.println("</script>");
+            // ---------------------------------------------------------------------------
             
             // The HTTP response ends with another blank line
             client.println();
@@ -164,6 +198,10 @@ void loop(){
     // Clear the header variable
     header = "";
     // Close the connection
+    client.stop();
 
   }
+}
+void loop(){
+ serverWeb();
 }
