@@ -20,20 +20,23 @@ String output26State = "off";
 
 constexpr uint8_t SensorPin = A0;          // GPIO pin connected to the capacitive soil‑moisture sensor
 
-int moisturePct = 0; // Latest moisture percentage (0‑100)
+int moisturePercent = 0; // Latest moisture percentage (0‑100)
 
+const int airValue = 3800;    // Value of the air
+const int waterValue = 800;   // value of water 
 
 // Assign output variables to GPIO pins
 const int output26 = 26;
 
+const int levelWatering = 20;
 
-
-const int timeWatering = 8000;// time for watering, 1000 = 1 second 
+int timeWatering = 8000;// the time starts with 8 sec , time for watering, 1000 = 1 second 
 
 // Current time
 unsigned long currentTime = millis();
 // Previous time
 unsigned long previousTime = 0; 
+
 // Define timeout time in milliseconds (example: 2000ms = 2s)
 const long timeoutTime = 2000;
 
@@ -63,8 +66,11 @@ void setup() {
 }
 
 void muistureSensor(){
-  int raw = analogRead(SensorPin);            //Sensor analog
-  moisturePct = 100 - ((raw * 100) / 4095);   //calculator of the sensor
+  int raw = analogRead(SensorPin);
+
+
+  moisturePercent = map(raw, airValue, waterValue, 0, 100);
+  moisturePercent = constrain(moisturePercent, 0, 100);
 }
 void serverWeb()
 {
@@ -89,7 +95,7 @@ void serverWeb()
           client.println("HTTP/1.1 200 OK");
           client.println("Content-type:text/plain");
           client.println("Connection: close\n");
-          client.print(moisturePct);                  // % of the moisture sensor 
+          client.print(moisturePercent);                  // % of the moisture sensor 
           break;
         }
         if (header.indexOf("GET /water") >= 0) {
@@ -103,6 +109,40 @@ void serverWeb()
           client.println("Connection: close\n");
           break;
         }
+        if (header.indexOf("POST /timeWater") >= 0) {
+      // Lire jusqu’à la fin des headers
+      while (client.available()) {
+        String line = client.readStringUntil('\n');
+        if (line.length() <= 2) break;
+      }
+
+      // Lire le contenu du formulaire
+      String body = "";
+      while (client.available()) body += (char)client.read();
+
+      // Récupérer la valeur de newTime (ex. newTime=8)
+      int pos = body.indexOf("newTime=");
+      if (pos != -1) {
+        String value = body.substring(pos + 8);
+        int t = value.toInt();
+        if (t >= 1 && t <= 60) {
+          timeWatering = t * 1000; // convertir secondes → millisecondes
+          Serial.print("Temps changé à : ");
+          Serial.println(timeWatering);
+        } else {
+          Serial.println("Valeur hors limite");
+        }
+      }
+
+      // Redirige vers la page d'accueil
+      client.println("HTTP/1.1 303 See Other");
+      client.println("Location: /");
+      client.println("Connection: close");
+      client.println();
+      break;
+    }
+
+        
         // -----------------------------------------------------
 
         if (c == '\n') {                    // if the byte is a newline character
@@ -119,13 +159,15 @@ void serverWeb()
             client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
             client.println("<link rel=\"icon\" href=\"data:,\">");
 
+
+
+
+
             // turns the GPIO 26 on and off
             if (header.indexOf("GET /26/on") >= 0) {
               Serial.println("GPIO 26 on");
               output26State = "Arrosage";
-              
-              
-              
+    
               digitalWrite(output26, HIGH);
               delay(timeWatering);
               output26State = "off";
@@ -135,6 +177,8 @@ void serverWeb()
               output26State = "off";
               digitalWrite(output26, LOW);
             }
+
+           // timeWatering = 3; 
 
             // Display the HTML web page
             
@@ -154,8 +198,14 @@ void serverWeb()
             client.print(timeWatering / 1000, 1);   // 1 décimale, 60000 ms = 1 min
             client.println(" secondes</p>");
            
+            client.println("<form action=\"/timeWater\" method=\"POST\">");
+            client.print("<label for=\"newTime\">Temps d'arrosage</label>");
+            client.print("<input type=\"number\" id=\"newTime\" name=\"newTime\" min=\"1\" max=\"60\" required>");
+            client.print("<input type=\"submit\" value=\"Changer\" style=\"margin-left: 10px;\">");
+            client.print("</form>");
+
             client.print("<p id=\"hum\" class=\"moistureText\">");
-            client.print(moisturePct );
+            client.print(moisturePercent );
             client.print("%</p>");
 
 
@@ -175,7 +225,7 @@ void serverWeb()
             client.println("function refresh(){fetch('/moisture').then(r=>r.text()).then(v=>document.getElementById('hum').textContent=v+'%');}");
 
             //Automatically refresh the value of the humidity sensor every 1,2 second  without reloading the page
-            client.println("setInterval(refresh,1200); refresh();");
+            client.println("setInterval(refresh,200); refresh();");
 
             //in this function when the button "Arrosage" is clicked he will send a request for activating the pump and after it will refresh the value of the humidity 
             client.println("function water(){fetch('/water').then(()=>refresh());}");
@@ -201,14 +251,20 @@ void serverWeb()
 
   }
 }
+//This function checks if the humidity level is right 
 void automaticWatering(){
 
-  if (moisturePct < 20 && output26State == "off") {
-    Serial.println("Arrosage automatique déclenché !");
+  //This condition is made to check if the level of the humidity is correct
+  if (moisturePercent < levelWatering ) {
+
+    //Activate the pin of the pump of water 
     output26State = "Arrosage";
     digitalWrite(output26, HIGH);
-    delay(timeWatering);
-    digitalWrite(output26, LOW);
+   
+  }
+  else{
+    //Deactivate the pin of the pump water 
+     digitalWrite(output26, LOW);
     output26State = "off";
   }
 }
@@ -216,5 +272,7 @@ void automaticWatering(){
 void loop(){
  serverWeb();
 
-    automaticWatering();
+  automaticWatering();
 }
+
+
