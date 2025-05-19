@@ -5,6 +5,14 @@
 // Load Wi-Fi library
 #include <WiFi.h>
 
+//load SPIFFS library
+#include <SPIFFS.h>
+
+//load arduino json library
+#include <ArduinoJson.h>
+
+#include <time.h>
+
 // Replace with your network credentials
 const char* ssid = "NETGEAR69";
 const char* password = "fancyflower620";
@@ -63,9 +71,15 @@ void setup() {
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
   server.begin();
+
+  if (!SPIFFS.begin(true)) {
+    Serial.println("Erreur SPIFFS");
+    return;
+  }
+  
 }
 
-void muistureSensor(){
+void moistureSensor(){
   int raw = analogRead(SensorPin);
 
 
@@ -75,7 +89,7 @@ void muistureSensor(){
 void serverWeb()
 {
    WiFiClient client = server.available();   // Listen for incoming clients
-  muistureSensor();
+  moistureSensor();
   
   
   if (client) {                             // If a new client connects,
@@ -87,11 +101,11 @@ void serverWeb()
       currentTime = millis();
       if (client.available()) {             // if there's bytes to read from the client,
         char c = client.read();             // read a byte, then
-        Serial.write(c);                    // print it out the serial monitor
+       
         header += c;
          // ----------  Nouvelles routes API légères  ----------
         if (header.indexOf("GET /moisture") >= 0) {
-          muistureSensor();                           // fresh value 
+          moistureSensor();                           // fresh value 
           client.println("HTTP/1.1 200 OK");
           client.println("Content-type:text/plain");
           client.println("Connection: close\n");
@@ -178,7 +192,6 @@ void serverWeb()
               digitalWrite(output26, LOW);
             }
 
-           // timeWatering = 3; 
 
             // Display the HTML web page
             
@@ -216,7 +229,7 @@ void serverWeb()
               client.println("<p><button class=\"button button2\" disabled>OFF</button></p>");
             } 
                
-            muistureSensor();
+            moistureSensor();
 
             // ----------  Script JS, code that refresh the values of the page without refreshing the page  
             client.println("<script>");
@@ -224,11 +237,10 @@ void serverWeb()
             //this function sends a request to "/moisture" after it converts it and its update to the element with a new value of the humidity 
             client.println("function refresh(){fetch('/moisture').then(r=>r.text()).then(v=>document.getElementById('hum').textContent=v+'%');}");
 
-            //Automatically refresh the value of the humidity sensor every 1,2 second  without reloading the page
-            client.println("setInterval(refresh,200); refresh();");
+            //Automatically refresh the value of the humidity sensor every 1 second  without reloading the page
+            client.println("setInterval(refresh,1000); refresh();");
 
-            //in this function when the button "Arrosage" is clicked he will send a request for activating the pump and after it will refresh the value of the humidity 
-            client.println("function water(){fetch('/water').then(()=>refresh());}");
+  
             client.println("</script>");
             
             
@@ -275,4 +287,18 @@ void loop(){
   automaticWatering();
 }
 
+//This function read the content in the Json file and print it to the serial monitor
+void readLogsJson() {
+  //Open the file log.json and reads it 
+  File file = SPIFFS.open("/log.json", FILE_READ);
+
+  //Write on the serial monitor the 
+  Serial.println("Contenu du fichier JSON :");
+  while (file.available()) {
+    Serial.write(file.read());
+  }
+
+  //Close the log.json file 
+  file.close();
+}
 
