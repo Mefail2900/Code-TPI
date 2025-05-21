@@ -1,12 +1,19 @@
 /*********
-  Mefail Sulejmani
+  Mefail Sulejmani 
 *********/
-
 
 // Load Wi-Fi library
 #include <WiFi.h>
 
-//Network credentials
+//load SPIFFS library
+#include <SPIFFS.h>
+
+//load arduino json library
+#include <ArduinoJson.h>
+
+#include <time.h>
+
+// Replace with your network credentials
 const char* ssid = "NETGEAR69";
 const char* password = "fancyflower620";
 
@@ -42,25 +49,20 @@ unsigned long previousTime = 0;
 const long timeoutTime = 2000;
 
 void setup() {
-
-  //Comunnication with the pc and the ESP32
   Serial.begin(115200);
-
   // Initialize the output variables as outputs
   pinMode(output26, OUTPUT);
 
   // Set outputs to LOW
-  digitalWrite(output26, LOW);
+  digitalWrite(output26, HIGH);
 
 
   // Connect to Wi-Fi network with SSID and password
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid, password);
-
-  //Try to connect on loop on infinity till is connected
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);//delay 0,5 sec
+    delay(500);
     Serial.print(".");
   }
   // Print local IP address and start web server
@@ -69,25 +71,29 @@ void setup() {
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
   server.begin();
-}
-//Function to give the humidity valu
-void muistureSensor(){
-  int raw = analogRead(SensorPin);//Sensor analog
 
-
-  moisturePercent = map(raw, airValue, waterValue, 0, 100);//calculator of the sensor for giving a number between 0 and 100 
-  moisturePercent = constrain(moisturePercent, 0, 100);//calculator of the sensor for giving a number between 0 and 100 
+  if (!SPIFFS.begin(true)) {
+    Serial.println("Erreur SPIFFS");
+    return;
+  }
+  
 }
 
-//Function that creates the web server for the client 
+void moistureSensor(){
+  int raw = analogRead(SensorPin);
+
+
+  moisturePercent = map(raw, airValue, waterValue, 0, 100);
+  moisturePercent = constrain(moisturePercent, 0, 100);
+}
 void serverWeb()
 {
    WiFiClient client = server.available();   // Listen for incoming clients
-
+  moistureSensor();
   
   
   if (client) {                             // If a new client connects,
-    currentTime = millis();//make a delay but it doesen't block the code, it runs untli tthe time is over
+    currentTime = millis();
     previousTime = currentTime;
 
     String currentLine = "";                // make a String to hold incoming data from the client
@@ -95,47 +101,25 @@ void serverWeb()
       currentTime = millis();
       if (client.available()) {             // if there's bytes to read from the client,
         char c = client.read();             // read a byte, then
-
+       
         header += c;
-
-           //Condition to check if the HTTP request contains "GET /moisture"
+         // ----------  Nouvelles routes API légères  ----------
         if (header.indexOf("GET /moisture") >= 0) {
-
-          //Call the function to get the humidity 
-          muistureSensor();      
-
-          // Send the HTTP response header: status OK (200)                
+          moistureSensor();                           // fresh value 
           client.println("HTTP/1.1 200 OK");
-
-          //Tell the client that the text is filled 
           client.println("Content-type:text/plain");
-          
-          //tell the client that the connection will will be closed
           client.println("Connection: close\n");
-
-          client.print(moisturePct);                  //write the  % of the moisture sensor 
-
+          client.print(moisturePercent);                  // % of the moisture sensor 
           break;
         }
-        //Condition to check if the HTTP request contains "GET /water"
         if (header.indexOf("GET /water") >= 0) {
-
+          Serial.println("Arrosage déclenché via /water");
           output26State = "Arrosage";
-
-          //Activate the GPIO 26 
           digitalWrite(output26, HIGH);
-
-          //Delay of the time put
           delay(timeWatering);
-
-          //Desactivate the GPIO 26 
           digitalWrite(output26, LOW);
           output26State = "off";
-         
-          // Send an HTTP response with status 204 this means that the command is recived and it doesent means to retur a data 
-          client.println("HTTP/1.1 204 No Content"); 
-
-          //tell the client that the connection is closed 
+          client.println("HTTP/1.1 204 No Content"); // réponse vide
           client.println("Connection: close\n");
           break;
         }
@@ -209,7 +193,6 @@ void serverWeb()
             }
 
 
-
             // Display the HTML web page
             
             // CSS to style the on/off buttons 
@@ -246,7 +229,11 @@ void serverWeb()
               client.println("<p><button class=\"button button2\" disabled>OFF</button></p>");
             } 
                
-            muistureSensor();
+            client.print("<p>Le dernier arrosage est :  ");
+            readLogsJson(client);
+            client.println(" </p>");
+
+            moistureSensor();
 
             // ----------  Script JS, code that refresh the values of the page without refreshing the page  
             client.println("<script>");
@@ -254,11 +241,14 @@ void serverWeb()
             //this function sends a request to "/moisture" after it converts it and its update to the element with a new value of the humidity 
             client.println("function refresh(){fetch('/moisture').then(r=>r.text()).then(v=>document.getElementById('hum').textContent=v+'%');}");
 
-            //Automatically refresh the value of the humidity sensor every 1,2 second  without reloading the page
-            client.println("setInterval(refresh,200); refresh();");
+            //Automatically refresh the value of the humidity sensor every 1 second  without reloading the page
+            client.println("setInterval(refresh,1000); refresh();");
 
+            
             //in this function when the button "Arrosage" is clicked he will send a request for activating the pump and after it will refresh the value of the humidity 
             client.println("function water(){fetch('/water').then(()=>refresh());}");
+
+  
             client.println("</script>");
             
             
@@ -289,12 +279,12 @@ void automaticWatering(){
 
     //Activate the pin of the pump of water 
     output26State = "Arrosage";
-    digitalWrite(output26, HIGH);
+    digitalWrite(output26, LOW);
    
   }
   else{
     //Deactivate the pin of the pump water 
-     digitalWrite(output26, LOW);
+     digitalWrite(output26, HIGH);
     output26State = "off";
   }
 }
@@ -303,5 +293,36 @@ void loop(){
  serverWeb();
 
   automaticWatering();
+}
+
+//This function read the content in the Json file and print it to the serial monitor
+void readLogsJson(WiFiClient& client) {
+  //Open the file log.json and reads it 
+  File file = SPIFFS.open("/log.json", FILE_READ);
+  
+  if (!file || file.isDirectory()) {
+    client.print("Error file not found");
+    return;
+  }
+  //Extract the value of the json file into variables
+ /* int id = doc["ID"];
+  const char* name = doc["name"];
+  const char* type = doc["type"];
+  int humidity = doc["Humidity"];
+  const char* date = doc["date"];
+
+  //show in the page 
+  client.print("ID : ");
+  client.print(ID);
+  client.print("Plante : ");
+  client.print(name);
+  client.print(", Type : ");
+  client.print(type);
+  client.print(", Humidité : ");
+  client.print(humidity);
+  client.print("%, Date : ");
+  client.print(date);*/
+
+  file.close();
 }
 

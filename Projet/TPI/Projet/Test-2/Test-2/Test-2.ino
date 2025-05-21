@@ -13,6 +13,8 @@
 
 #include <time.h>
 
+#include "Historique.h"
+
 // Replace with your network credentials
 const char* ssid = "NETGEAR69";
 const char* password = "fancyflower620";
@@ -72,11 +74,13 @@ void setup() {
   Serial.println(WiFi.localIP());
   server.begin();
 
-  if (!SPIFFS.begin(true)) {
-    Serial.println("Erreur SPIFFS");
+
+  
+   if (!SPIFFS.begin(false)) {
+    Serial.println("Failed to mount SPIFFS!");
     return;
   }
-  
+
 }
 
 void moistureSensor(){
@@ -228,7 +232,10 @@ void serverWeb()
             } else {
               client.println("<p><button class=\"button button2\" disabled>OFF</button></p>");
             } 
-               
+            client.print("<p>Le dernier arrosage est :  ");
+           // readLogsJson(client);
+            client.println(" </p>");
+
             moistureSensor();
 
             // ----------  Script JS, code that refresh the values of the page without refreshing the page  
@@ -239,6 +246,10 @@ void serverWeb()
 
             //Automatically refresh the value of the humidity sensor every 1 second  without reloading the page
             client.println("setInterval(refresh,1000); refresh();");
+
+            
+            //in this function when the button "Arrosage" is clicked he will send a request for activating the pump and after it will refresh the value of the humidity 
+            client.println("function water(){fetch('/water').then(()=>refresh());}");
 
   
             client.println("</script>");
@@ -272,6 +283,7 @@ void automaticWatering(){
     //Activate the pin of the pump of water 
     output26State = "Arrosage";
     digitalWrite(output26, HIGH);
+    WriteLogJson();
    
   }
   else{
@@ -282,23 +294,76 @@ void automaticWatering(){
 }
 
 void loop(){
- serverWeb();
+  serverWeb();
 
   automaticWatering();
+
 }
 
-//This function read the content in the Json file and print it to the serial monitor
-void readLogsJson() {
-  //Open the file log.json and reads it 
-  File file = SPIFFS.open("/log.json", FILE_READ);
-
-  //Write on the serial monitor the 
-  Serial.println("Contenu du fichier JSON :");
-  while (file.available()) {
-    Serial.write(file.read());
+void WriteLogJson(){
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to get time from NTP server");
+    return;
   }
 
-  //Close the log.json file 
-  file.close();
-}
+  // Format the current date and time as a string
+  char dateTime[20];
+  strftime(dateTime, sizeof(dateTime), "%Y-%m-%d %H:%M", &timeinfo);
+    
+  DynamicJsonDocument doc(512);
 
+    doc["ID"] = 1;
+    doc["name"] = "Mint";
+    doc["type"] = "Aromatic";
+    doc["Humidity"] = moisturePercent;
+    doc["date"] = dateTime;
+    doc["pin"] = 26;
+    
+
+    // -------------------------------------------------- Write JSON to file
+    File file = SPIFFS.open(logFile, "w");
+    serializeJsonPretty(doc, file);
+    file.close();
+  }
+  
+// Reads and prints the log content to the serial monitor
+
+  void readLogsJson(WiFiClient client) {
+      //Open the file log.json and reads it 
+      File file = SPIFFS.open("/log.json", FILE_READ);
+      
+      if (!file || file.isDirectory()) {
+        client.print("Error file not found");
+        return;
+      }
+      //Extract the value of the json file into variables
+    
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, file);
+
+    if (error) {
+      client.print("Erreur de lecture JSON");
+      file.close();
+      return;
+    }
+
+      const char* name = doc["name"];
+      const char* type = doc["type"];
+      int humidity = doc["Humidity"];
+      const char* date = doc["date"];
+
+      //show in the page 
+
+      client.print("Plante : ");
+      client.print(name);
+      client.print(", Type : ");
+      client.print(type);
+      client.print(", Humidite : ");
+      client.print(humidity);
+      client.print("%, Date : ");
+      client.print(date);
+
+      file.close();
+  }
