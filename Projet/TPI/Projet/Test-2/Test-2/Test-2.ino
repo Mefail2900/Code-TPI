@@ -38,6 +38,10 @@ const int waterValue = 800;   // value of water
 // Assign output variables to GPIO pins
 const int output26 = 26;
 
+
+// Assign output variables to GPIO pins
+//const int output25 = 25;
+
 const int levelWatering = 20;
 
 int timeWatering = 8000;// the time starts with 8 sec , time for watering, 1000 = 1 second 
@@ -55,9 +59,12 @@ void setup() {
   // Initialize the output variables as outputs
   pinMode(output26, OUTPUT);
 
+ // pinMode(output25, OUTPUT);
+
   // Set outputs to LOW
   digitalWrite(output26, LOW);
 
+  //digitalWrite(output25, LOW);
 
   // Connect to Wi-Fi network with SSID and password
   Serial.print("Connecting to ");
@@ -120,6 +127,8 @@ void serverWeb()
           Serial.println("Arrosage déclenché via /water");
           output26State = "Arrosage";
           digitalWrite(output26, HIGH);
+          //Write the blush logs in the Json file to keep track 
+          WriteLogJson();
           delay(timeWatering);
           digitalWrite(output26, LOW);
           output26State = "off";
@@ -180,22 +189,25 @@ void serverWeb()
 
 
 
-
-            // turns the GPIO 26 on and off
+/////////////////////////////////////////////////////.------------------------------------nothing 
+           /* // turns the GPIO 26 on and off
             if (header.indexOf("GET /26/on") >= 0) {
               Serial.println("GPIO 26 on");
               output26State = "Arrosage";
     
               digitalWrite(output26, HIGH);
+              
+              
               delay(timeWatering);
               output26State = "off";
+             
               digitalWrite(output26, LOW);
             } else if (header.indexOf("GET /26/off") >= 0) {
               Serial.println("GPIO 26 off");
               output26State = "off";
               digitalWrite(output26, LOW);
-            }
-
+            }*/
+/////////////////////////////////////////////////////.------------------------------------nothing 
 
             // Display the HTML web page
             
@@ -205,7 +217,8 @@ void serverWeb()
             client.println(".button { background-color: #4CAF50; border: none; color: white; padding: 16px 40px;");
             client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}");
             client.println(".moistureText{font-size:3rem;color:#28a745;font-weight:bold;margin:0;}");
-            client.println(".button2 {background-color: #555555;}</style></head>");
+            client.println(".button {background-color: green;}");
+            client.println(".buttonRed {background-color: red;color: white;} </style></head>");
             
             // Web Page Heading
             client.println("<body><h1>ESP32 Web Server</h1>");
@@ -225,31 +238,34 @@ void serverWeb()
             client.print(moisturePercent );
             client.print("%</p>");
 
+            //Show the button "Arroser" on green, if the user click the button the color and the text of the button wil change on red and the text will be "Arrosage" made AI 
+            client.println(
+              "<p><button style='background:#4CAF50;color:#fff;padding:16px 40px;font-size:30px;border:none;cursor:pointer'"
+              " onclick=\"(b=>{b.innerText='Arrosage';b.style.background='red';b.disabled=true;"
+              "fetch('/water').then(()=>{b.innerText='Arroser';b.style.background='#4CAF50';b.disabled=false;refresh();});})(this)\">"
+              "Arroser</button></p>"
+            );
 
-            // If the output26State is off, it displays the ON button       
-            if (output26State=="off") {
-              client.println("<p><button class=\"button\" onclick=\"water()\">Arroser</button></p>");
-            } else {
-              client.println("<p><button class=\"button button2\" disabled>OFF</button></p>");
-            } 
+           
             client.print("<p>Le dernier arrosage est :  ");
-           // readLogsJson(client);
+            readLogsJson(client);
             client.println(" </p>");
 
             moistureSensor();
 
-            // ----------  Script JS, code that refresh the values of the page without refreshing the page  
+            // ----------  Script JS, code that refresh the values of the page without refreshing the page   made AI 
             client.println("<script>");
 
             //this function sends a request to "/moisture" after it converts it and its update to the element with a new value of the humidity 
             client.println("function refresh(){fetch('/moisture').then(r=>r.text()).then(v=>document.getElementById('hum').textContent=v+'%');}");
 
+            
+
             //Automatically refresh the value of the humidity sensor every 1 second  without reloading the page
             client.println("setInterval(refresh,1000); refresh();");
 
             
-            //in this function when the button "Arrosage" is clicked he will send a request for activating the pump and after it will refresh the value of the humidity 
-            client.println("function water(){fetch('/water').then(()=>refresh());}");
+           
 
   
             client.println("</script>");
@@ -284,12 +300,14 @@ void automaticWatering(){
     output26State = "Arrosage";
     digitalWrite(output26, HIGH);
     WriteLogJson();
+   // digitalWrite(output25, HIGH);
    
   }
   else{
     //Deactivate the pin of the pump water 
      digitalWrite(output26, LOW);
     output26State = "off";
+  //  digitalWrite(output25, LOW);
   }
 }
 
@@ -329,7 +347,6 @@ void WriteLogJson(){
   }
   
 // Reads and prints the log content to the serial monitor
-
   void readLogsJson(WiFiClient client) {
       //Open the file log.json and reads it 
       File file = SPIFFS.open("/log.json", FILE_READ);
